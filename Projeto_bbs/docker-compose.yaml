@@ -1,0 +1,96 @@
+services:
+  broker:
+    build:
+      context: ./broker
+    environment:
+      FRONTEND_PORT: "5555"
+      BACKEND_PORT: "5556"
+    networks:
+      - bbs_network
+    restart: unless-stopped
+  proxy:
+    build:
+      context: ./proxy
+    environment:
+      XSUB_PORT: "5557"
+      XPUB_PORT: "5558"
+    networks:
+      - bbs_network
+    restart: unless-stopped
+  referencia:
+    build:
+      context: ./referencia
+    environment:
+      REF_PORT: "5559"
+      HEARTBEAT_TIMEOUT: "35"
+    networks:
+      - bbs_network
+    restart: unless-stopped
+  servidor1:
+    build:
+      context: ./servidor
+    environment:
+      SERVER_ID: servidor1
+      BROKER_ENDPOINT: tcp://broker:5556
+      PUB_ENDPOINT: tcp://proxy:5557
+      DB_PATH: /app/data/bbs.db
+      REF_ENDPOINT: tcp://referencia:5559
+    volumes:
+      - servidor1_dados:/app/data
+    networks:
+      - bbs_network
+    depends_on:
+      - broker
+      - proxy
+      - referencia
+    restart: unless-stopped
+  servidor2:
+    build:
+      context: ./servidor
+    environment:
+      SERVER_ID: servidor2
+      BROKER_ENDPOINT: tcp://broker:5556
+      PUB_ENDPOINT: tcp://proxy:5557
+      DB_PATH: /app/data/bbs.db
+      REF_ENDPOINT: tcp://referencia:5559
+    volumes:
+      - servidor2_dados:/app/data
+    networks:
+      - bbs_network
+    depends_on:
+      - broker
+      - proxy
+      - referencia
+    restart: unless-stopped
+  bot1:
+    build:
+      context: ./bot
+    environment:
+      BOT_NAME: bot1
+      BROKER_ENDPOINT: tcp://broker:5555
+      SUB_ENDPOINT: tcp://proxy:5558
+    networks:
+      - bbs_network
+    depends_on:
+      - broker
+      - proxy
+    restart: unless-stopped
+  bot2:
+    build:
+      context: ./bot
+    environment:
+      BOT_NAME: bot2
+      BROKER_ENDPOINT: tcp://broker:5555
+      SUB_ENDPOINT: tcp://proxy:5558
+    networks:
+      - bbs_network
+    depends_on:
+      - broker
+      - proxy
+    restart: unless-stopped
+networks:
+  bbs_network:
+    driver: bridge
+volumes:
+  servidor1_dados:
+  servidor2_dados:
