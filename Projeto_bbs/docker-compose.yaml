@@ -62,6 +62,42 @@ services:
       - proxy
       - referencia
     restart: unless-stopped
+  servidor3:
+    build:
+      context: ./servidor
+    environment:
+      SERVER_ID: servidor3
+      BROKER_ENDPOINT: tcp://broker:5556
+      PUB_ENDPOINT: tcp://proxy:5557
+      DB_PATH: /app/data/bbs.db
+      REF_ENDPOINT: tcp://referencia:5559
+    volumes:
+      - servidor3_dados:/app/data
+    networks:
+      - bbs_network
+    depends_on:
+      - broker
+      - proxy
+      - referencia
+    restart: unless-stopped
+  servidor4:
+    build:
+      context: ./servidor
+    environment:
+      SERVER_ID: servidor4
+      BROKER_ENDPOINT: tcp://broker:5556
+      PUB_ENDPOINT: tcp://proxy:5557
+      DB_PATH: /app/data/bbs.db
+      REF_ENDPOINT: tcp://referencia:5559
+    volumes:
+      - servidor4_dados:/app/data
+    networks:
+      - bbs_network
+    depends_on:
+      - broker
+      - proxy
+      - referencia
+    restart: unless-stopped
   bot1:
     build:
       context: ./bot

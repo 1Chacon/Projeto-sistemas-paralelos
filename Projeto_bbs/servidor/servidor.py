@@ -289,10 +289,13 @@ class Coordenacao:
                     with self.lock:
                         self.falhos.discard(nome)
                     self.log(f"ELEICAO | {nome} respondeu OK")
-            except (zmq.ZMQError, ValueError):
+            except (zmq.ZMQError, ValueError) as erro:
                 with self.lock:
                     self.falhos.add(nome)
-                self.log(f"ELEICAO | {nome} nao respondeu")
+                self.log(
+                    f"ELEICAO | {nome} nao respondeu | "
+                    f"erro: {type(erro).__name__}: {erro}"
+                )
         if respondeu:
             self.anunciado.wait(timeout=1.6)
             with self.lock:
@@ -337,7 +340,7 @@ class Coordenacao:
                     with self.lock:
                         lider = self.coordenador
                     if lider == self.nome:
-                        resposta["hora_epoch"] = self.calcular_berkeley()
+                        resposta["hora_epoch"] = hora_aplicacao()
                         resposta["coordenador"] = self.nome
                     else:
                         resposta["status"] = "erro"
