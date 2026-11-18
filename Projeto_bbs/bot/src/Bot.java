@@ -206,7 +206,7 @@ public class Bot {
                            "Teste de publicacao", "Mensagem distribuida"};
         try (ZContext contexto = new ZContext()) {
             ZMQ.Socket subscriber = contexto.createSocket(ZMQ.SUB);
-            subscriber.setLinger(0);*
+            subscriber.setLinger(0);
             subscriber.connect(enderecoSub);
             try (ZMQ.Poller poller = contexto.createPoller(1)) {
                 int indice = poller.register(subscriber, ZMQ.Poller.POLLIN);
