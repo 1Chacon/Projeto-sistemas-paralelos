@@ -460,9 +460,11 @@ class Coordenacao:
                     diferenca = float(info["hora_epoch"]) + (fim - inicio) / 2.0 - fim
                     desvios.append(diferenca)
                     participantes.append(nome)
-            except (zmq.ZMQError, ValueError, KeyError):
-                with self.lock:
-                    self.falhos.add(nome)
+            except (zmq.ZMQError, ValueError, KeyError) as erro:
+                self.log(
+                    f"BERKELEY | {nome} nao respondeu neste ciclo "
+                    f"| erro: {type(erro).__name__}: {erro}"
+                )
         ajuste = sum(desvios) / len(desvios)
         definir_desvio(ajuste)
         self.log(f"BERKELEY | coordenador: {self.nome} | participantes: {participantes} | ajuste: {ajuste:+.4f}s")
