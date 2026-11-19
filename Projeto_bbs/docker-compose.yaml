@@ -130,3 +130,5 @@ networks:
 volumes:
   servidor1_dados:
   servidor2_dados:
+  servidor3_dados:
+  servidor4_dados:
