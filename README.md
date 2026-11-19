@@ -22,7 +22,7 @@ Para acompanhar os bots: docker compose logs -f bot1 bot2
 
 Para acompanhar as eleicoes a coordenador: docker compose logs -f servidor1 servidor2 servidor3 servidor4 | Select-String 'ELEICAO|COORDENADOR|BERKELEY'
 
-Para encerrar, useP: Ctrl+C
+Para encerrar, use: Ctrl+C
 
 ## Funcionamento
 
