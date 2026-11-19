@@ -16,9 +16,11 @@ Projeto integrado de Bulletin Board System (BBS) com dois bots Java e dois servi
 
 Requisitos: Docker Desktop instalado e iniciado. Abra um terminal dentro da pasta e execute: docker compose up --build
 
-Para acompanhar apenas os servidores e a referencia, use em outro terminal: docker compose logs -f servidor1 servidor2 referencia
+Para acompanhar apenas os servidores e a referencia, use em outro terminal: docker compose logs -f servidor1 servidor2 servidor3 servidor4
 
 Para acompanhar os bots: docker compose logs -f bot1 bot2
+
+Para acompanhar as eleicoes a coordenador: docker compose logs -f servidor1 servidor2 servidor3 servidor4 | Select-String 'ELEICAO|COORDENADOR|BERKELEY'
 
 Para encerrar, useP: Ctrl+C
 
