@@ -5,11 +5,11 @@ Projeto integrado de Bulletin Board System (BBS) com dois bots Java e dois servi
 ## Tecnologias 
 
 - Java 21 (JeroMQ e MessagePack): bots que fazem login, consultam canais, criam canais quando necessario e publicam mensagens automaticamente.
-- Python 3.12 (pyzmq, msgpack, SQLite): dois servidores que processam requisicoes, publicam mensagens via ZeroMQ e registram dados em bancos independentes.
+- Python 3.12 (pyzmq, msgpack, SQLite): quatro servidores que processam requisicoes, publicam mensagens via ZeroMQ e registram dados em bancos independentes.
 - Broker: encaminha pedidos REQ/REP entre bots e servidores por balanceamento automatico do ZeroMQ.
 - Proxy: distribui as publicacoes para os bots inscritos nos canais.
 - Referencia: atribui ranks, informa servidores disponiveis e recebe heartbeats.
-- Docker Compose: inicia os sete containers em uma rede interna.
+- Docker Compose: inicia os 9 containers em uma rede interna.
 
 
 ## Executar
