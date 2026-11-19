@@ -23,7 +23,7 @@ class RelogioLogico:
             self.valor += 1
             return self.valor 
 RELOGIO = RelogioLogico()
-DESVIO_RELOGIO = 0.0  # Ajuste do relogio virtual
+DESVIO_RELOGIO = 0.0  
 TRAVA_HORA = threading.Lock()
 
 def hora_aplicacao():
@@ -143,7 +143,6 @@ def processar(requisicao, conexao, pub, identificador, imprimir=True, registrar_
             retorno = resposta("publicar_resposta", requisicao, "erro", "Canal ou mensagem invalidos")
             retorno["canal"] = canal
             return retorno
-        # Cada servidor utiliza seu proprio banco SQLite sem replicacao.
         criar_canal(conexao, canal, usuario, timestamp)
         publicacao = {
             "tipo": "publicacao", "usuario": usuario, "canal": canal,
@@ -189,7 +188,6 @@ def solicitar_referencia(contexto, endereco, tipo, identificador):
         return retorno
     finally:
         req.close()
-        
 class Coordenacao:
     def __init__(self, contexto, identificador, rank, pub_endpoint, sub_endpoint,
                  porta_rpc, peers=None):
@@ -206,6 +204,7 @@ class Coordenacao:
         self.lock = threading.RLock()
         self.anunciado = threading.Event()
         self.ultima_eleicao = 0.0
+        self.trava_eleicao = threading.Lock()  
         self.rodando = True
     def log(self, mensagem):
         print(f"[{rotulo_servidor(self.nome)}] {mensagem}", flush=True)
@@ -272,6 +271,15 @@ class Coordenacao:
         finally:
             publicador.close()
     def iniciar_eleicao(self, motivo="coordenador nao respondeu"):
+        if not self.trava_eleicao.acquire(blocking=False):
+            self.log("ELEICAO | ja existe uma eleicao local em andamento")
+            return
+        try:
+            self._executar_eleicao(motivo)
+        finally:
+            self.trava_eleicao.release()
+
+    def _executar_eleicao(self, motivo):
         with self.lock:
             if time.monotonic() - self.ultima_eleicao < 0.85:
                 return
@@ -281,38 +289,68 @@ class Coordenacao:
                                  if r > self.rank), reverse=True)
         self.log(f"ELEICAO INICIADA | motivo: {motivo} | superiores: {[n for _, n in superiores]}")
         respondeu = []
-        for _, nome in superiores:
-            try:
-                resposta = self.solicitar(nome, "eleicao", timeout=700)
-                if resposta.get("status") == "OK":
+        for rank, nome in superiores:
+            for tentativa in range(1, 3):
+                try:
+                    retorno = self.solicitar(nome, "eleicao", timeout=1400, rank=self.rank)
+                    if retorno.get("status") != "OK":
+                        raise ValueError(f"resposta inesperada: {retorno.get('status')}")
+                    if int(retorno.get("rank", -1)) != rank:
+                        raise ValueError("rank informado pelo peer nao corresponde ao registro")
                     respondeu.append(nome)
                     with self.lock:
                         self.falhos.discard(nome)
-                    self.log(f"ELEICAO | {nome} respondeu OK")
-            except (zmq.ZMQError, ValueError) as erro:
+                    self.log(f"ELEICAO | {nome} respondeu OK | tentativa: {tentativa}")
+                    break
+                except (zmq.ZMQError, ValueError) as erro:
+                    self.log(f"ELEICAO | falha consultando {nome} "
+                             f"({self.endereco(nome)}) | tentativa: {tentativa}/2 "
+                             f"| erro: {type(erro).__name__}: {erro}")
+                    if tentativa < 2:
+                        time.sleep(0.15)
+            else:
                 with self.lock:
                     self.falhos.add(nome)
-                self.log(
-                    f"ELEICAO | {nome} nao respondeu | "
-                    f"erro: {type(erro).__name__}: {erro}"
-                )
+                self.log(f"ELEICAO | {nome} nao respondeu apos 2 tentativas")
         if respondeu:
-            self.anunciado.wait(timeout=1.6)
+            self.anunciado.wait(timeout=4.0)
+            maior_respondeu = max(self.servidores[n] for n in respondeu)
             with self.lock:
                 lider = self.coordenador
-            if lider in respondeu:
-                return
+                lider_rank = self.servidores.get(lider, 0)
+                lider_falhou = lider in self.falhos
+            if lider and not lider_falhou and lider_rank >= maior_respondeu:
+                try:
+                    confirmacao = self.solicitar(lider, "consultar_coordenador", timeout=1400)
+                    if (confirmacao.get("status") == "OK" and
+                            confirmacao.get("coordenador") == lider):
+                        self.log(f"ELEICAO | anuncio confirmado | coordenador: {lider}")
+                        return
+                except (zmq.ZMQError, ValueError) as erro:
+                    self.log(f"ELEICAO | anuncio de {lider} nao confirmado: {erro}")
+                with self.lock:
+                    self.falhos.add(lider)
+                    if self.coordenador == lider:
+                        self.coordenador = None
             for nome in respondeu:
                 try:
-                    retorno = self.solicitar(nome, "hora_local", timeout=700)
-                    if retorno.get("status") == "OK":
-                        self.definir_coordenador(nome, self.servidores[nome], "confirmacao REQ/REP")
-                        return
-                except (zmq.ZMQError, ValueError):
+                    estado = self.solicitar(nome, "consultar_coordenador", timeout=1400)
+                    candidato = estado.get("coordenador", "")
+                    rank_candidato = int(estado.get("rank_coordenador", 0))
                     with self.lock:
-                        self.falhos.add(nome)
+                        candidato_falhou = candidato in self.falhos
+                    if (estado.get("status") == "OK" and candidato
+                            and not candidato_falhou
+                            and rank_candidato >= maior_respondeu):
+                        self.definir_coordenador(candidato, rank_candidato,
+                                                 "confirmacao REQ/REP")
+                        return
+                except (zmq.ZMQError, ValueError) as erro:
+                    self.log(f"ELEICAO | consulta coordenador de {nome} falhou: {erro}")
+            self.log("ELEICAO | servidor superior ativo, aguardando coordenador; "
+                     "nao assumir lideranca")
+            return
         self.anunciar()
-
     def _receber_rpc(self):
         rep = self.contexto.socket(zmq.REP)
         rep.linger = 0
@@ -322,18 +360,31 @@ class Coordenacao:
             while self.rodando:
                 if not rep.poll(250, zmq.POLLIN):
                     continue
-                pedido = msgpack.unpackb(rep.recv(), raw=False)
+                try:
+                    pedido = msgpack.unpackb(rep.recv(), raw=False)
+                    if not isinstance(pedido, dict):
+                        raise ValueError("pacote RPC precisa ser um dicionario")
+                except (ValueError, TypeError, msgpack.exceptions.UnpackException) as erro:
+                    self.log(f"RPC SERVIDORES | pacote invalido: {erro}")
+                    rep.send(msgpack.packb({"tipo": "erro", "status": "erro",
+                                            "mensagem": "pacote invalido"}, use_bin_type=True))
+                    continue
                 RELOGIO.receber(pedido)
                 tipo = pedido.get("tipo", "")
                 resposta = {"tipo": tipo + "_resposta", "request_id": pedido.get("request_id", ""),
                             "nome": self.nome, "timestamp": agora(), "status": "OK"}
+                convocar_eleicao = False
                 if tipo == "eleicao":
                     resposta["rank"] = self.rank
-                    # Responde OK antes de iniciar o restante da eleicao.
-                    if self.rank > self.servidores.get(pedido.get("nome", ""), -1):
-                        threading.Thread(target=self.iniciar_eleicao,
-                                         args=(f"pedido de {pedido.get('nome', '')}",),
-                                         daemon=True).start()
+                    origem = pedido.get("nome", "")
+                    rank_origem = int(pedido.get("rank", self.servidores.get(origem, -1)))
+                    convocar_eleicao = self.rank > rank_origem
+                    self.log(f"ELEICAO RPC RECEBIDA | origem: {origem} | rank: {rank_origem}")
+                elif tipo == "consultar_coordenador":
+                    with self.lock:
+                        lider_atual = self.coordenador
+                        resposta["coordenador"] = lider_atual or ""
+                        resposta["rank_coordenador"] = self.servidores.get(lider_atual, 0)
                 elif tipo == "hora_local":
                     resposta["hora_epoch"] = hora_aplicacao()
                 elif tipo == "relogio":
@@ -349,6 +400,13 @@ class Coordenacao:
                     resposta["status"] = "erro"
                 resposta["relogio_logico"] = RELOGIO.enviar()
                 rep.send(msgpack.packb(resposta, use_bin_type=True))
+                if tipo == "eleicao":
+                    self.log(f"ELEICAO RPC RESPONDIDA | destino: {pedido.get('nome', '')} "
+                             f"| rank: {self.rank}")
+                    if convocar_eleicao:
+                        threading.Thread(target=self.iniciar_eleicao,
+                                         args=(f"pedido de {pedido.get('nome', '')}",),
+                                         daemon=True).start()
         finally:
             rep.close()
     def _receber_anuncios(self):
@@ -369,6 +427,18 @@ class Coordenacao:
                     nome = anuncio.get("coordenador", "")
                     rank = int(anuncio.get("rank", 0))
                     if nome and rank:
+                        with self.lock:
+                            falhou_antes = nome in self.falhos
+                        if falhou_antes:
+                            try:
+                                teste = self.solicitar(nome, "consultar_coordenador", timeout=900)
+                                if (teste.get("status") != "OK" or
+                                        teste.get("coordenador") != nome):
+                                    self.log(f"ELEICAO | anuncio de {nome} ignorado (sem confirmacao)")
+                                    continue
+                            except (zmq.ZMQError, ValueError):
+                                self.log(f"ELEICAO | anuncio de {nome} ignorado (sem resposta RPC)")
+                                continue
                         self.definir_coordenador(nome, rank, "PUB/SUB servers")
         finally:
             sub.close()
